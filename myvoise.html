@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Voice LED Control</title>
+
+  <!-- Google Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+      font-family: 'Poppins', sans-serif;
+      color: #ffffff;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(12px);
+      border-radius: 18px;
+      padding: 35px 40px;
+      width: 360px;
+      text-align: center;
+      box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    h2 {
+      margin-top: 0;
+      margin-bottom: 25px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    button {
+      width: 100%;
+      padding: 15px;
+      font-size: 16px;
+      font-weight: 500;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #00c6ff, #0072ff);
+      color: white;
+      cursor: pointer;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      box-shadow: 0 8px 25px rgba(0, 114, 255, 0.4);
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(0, 114, 255, 0.6);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    #status {
+      margin-top: 25px;
+      padding: 12px;
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.35);
+      font-size: 14px;
+      min-height: 20px;
+    }
+
+    .footer {
+      margin-top: 20px;
+      font-size: 12px;
+      opacity: 0.7;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="card">
+    <h2>🎤 Voice Controlled LED</h2>
+
+    <button onclick="startListening()">Start Listening</button>
+
+    <p id="status">Idle</p>
+
+    <div class="footer">
+      ESP32 · MQTT · Deepgram
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+  <script>
+    const DEEPGRAM_KEY = "YOUR_DEEPGRAM_API_KEY";
+
+    // MQTT
+    const client = mqtt.connect("wss://YOUR_HIVEMQ_URL:8884/mqtt", {
+      username: "YOUR_MQTT_USERNAME",
+      password: "YOUR_MQTT_PASSWORD"
+    });
+
+    client.on("connect", () => {
+      console.log("MQTT Connected");
+    });
+
+    // ---------- VOICE ----------
+    async function startListening() {
+      document.getElementById("status").innerText = "🎧 Listening...";
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      let audioChunks = [];
+
+      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        audioChunks = [];
+
+        const response = await fetch(
+          "https://api.deepgram.com/v1/listen",
+          {
+            method: "POST",
+            headers: {
+              "Authorization": "Token " + DEEPGRAM_KEY,
+              "Content-Type": "audio/webm"
+            },
+            body: audioBlob
+          }
+        );
+
+        const data = await response.json();
+        const text = data.results.channels[0].alternatives[0].transcript.toLowerCase();
+
+        document.getElementById("status").innerText = "🗣 Heard: " + text;
+
+        if (text.includes("on")) {
+          client.publish("esp32/led", "ON");
+        }
+        if (text.includes("off")) {
+          client.publish("esp32/led", "OFF");
+        }
+      };
+
+      mediaRecorder.start();
+      setTimeout(() => mediaRecorder.stop(), 3000);
+    }
+  </script>
+
+</body>
+</html>
